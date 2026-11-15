@@ -1,3 +1,5 @@
-*.pkl
-*.sql
-*.sql.gz
+*_backup.lua
+*_backup.toc
+.DS_Store
+Thumbs.db
+dist/

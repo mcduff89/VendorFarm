@@ -1,4 +1,4 @@
-# VendorFarm
+# VendorFarm 2.1.0
 
 Ranks the mobs around your level by expected **vendor gold per hour**, for WoW Forever.
 
@@ -15,6 +15,9 @@ Ranks the mobs around your level by expected **vendor gold per hour**, for WoW F
 - Level range: type the lowest level in **From** (Enter), and pick +0 to +5 above your level in the dropdown.
 - Settings (Esc > Options > AddOns > VendorFarm): rows, rares, respawn cap.
 
+## Install
+Download `VendorFarm-<version>.zip` from Releases and extract it into `World of Warcraft\_forever_\Interface\AddOns`. Optional but recommended: QuestieDB (zones, spawns, friendly filter), TomTom (waypoints, spawn dots), Auctionator (AH prices).
+
 ## Where the numbers come from
 - **Other players (1.6.0+):** VendorFarm users share kill/loot totals through hidden addon messages, all inside the game. Turn it off in settings.
 - **Your own kills (1.2.0+):** every corpse you loot is recorded per mob. Rates blend from the database toward yours and use only yours after the "Kills until your own drop rates take over" setting (100 by default).
@@ -24,6 +27,9 @@ Ranks the mobs around your level by expected **vendor gold per hour**, for WoW F
 - **Kills per hour** is a model: 3600 / seconds per kill, capped by spawn count x 3600 / respawn time. Set seconds per kill to your real pace.
 
 Rebuild the data with `tools/build.py` (parse the CMaNGOS SQL dump with `tools/parse.py` first).
+
+## License and credits
+GPL-3.0 (see LICENSE). Drop rates, vendors, herb/ore nodes and fishing loot come from the [CMaNGOS Classic-DB](https://github.com/cmangos/classic-db) (GPL-3.0). Zones and spawn coordinates are read at runtime from QuestieDB; waypoints and map pins use TomTom / HereBeDragons. No code from those addons is included.
 
 ## Changelog
 - 2.1.0 (2026-11-14): Gathering data is shared like mob data (same channels and settings): what nodes and fishing drop per zone (item counts, so your own prices apply) and other players' nodes per hour as a better starting guess. Each player counts for at most 2000 nodes or catches per zone; impossible numbers are dropped. Your own pace still takes over after 20 nodes in a zone.
