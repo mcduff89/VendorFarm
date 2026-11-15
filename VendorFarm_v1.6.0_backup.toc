@@ -1,0 +1,19 @@
+## Interface: 16001
+## Title: VendorFarm
+## Notes: Ranks mobs near your level by expected vendor gold per hour, from database drop rates and live sell prices.
+## Author: Zac Duffey
+## Version: 1.6.0
+## SavedVariables: VendorFarmDB
+## OptionalDeps: QuestieDB, Auctionator, TomTom
+## IconTexture: Interface\Icons\INV_Misc_Coin_02
+## X-License: GPL-3.0 (data from CMaNGOS Classic-DB)
+
+DataMobs.lua
+DataItems.lua
+Core.lua
+Learn.lua
+Sync.lua
+Dungeons.lua
+UI.lua
+Tracker.lua
+Options.lua
