@@ -1,8 +1,7 @@
-# Makes a GitHub release whenever the version in VendorFarm.toc changes.
-# Push as usual from GitHub Desktop: if "## Version" is new, this builds
-# VendorFarm-<version>.zip (one VendorFarm folder with only the files the
-# game needs) and publishes it as release v<version>. Pushes that don't
-# change the version do nothing.
+# Makes a GitHub release whenever the version in VendorFarm/VendorFarm.toc changes.
+# Push as usual from GitHub Desktop: if "## Version" is new, this zips the VendorFarm
+# addon folder (plus README and LICENSE, no backups) as VendorFarm-<version>.zip and
+# publishes it as release v<version>. Pushes that don't change the version do nothing.
 name: Release
 
 on:
@@ -22,7 +21,7 @@ jobs:
       - name: Read version
         id: v
         run: |
-          version=$(grep -m1 '^## Version:' VendorFarm.toc | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')
+          version=$(grep -m1 '^## Version:' VendorFarm/VendorFarm.toc | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if gh release view "v$version" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -35,11 +34,10 @@ jobs:
       - name: Build zip
         if: steps.v.outputs.exists == 'false'
         run: |
-          mkdir -p build/VendorFarm
-          grep -v '^#' VendorFarm.toc | tr -d '\r' | grep '\.lua$' | while read -r f; do
-            cp "$f" build/VendorFarm/
-          done
-          cp VendorFarm.toc README.md LICENSE build/VendorFarm/
+          mkdir -p build
+          cp -r VendorFarm build/
+          cp README.md LICENSE build/VendorFarm/
+          find build -name '*_backup.*' -delete
           cd build && zip -qr "../VendorFarm-${{ steps.v.outputs.version }}.zip" VendorFarm
 
       - name: Publish release
@@ -49,7 +47,7 @@ jobs:
           change=$(grep -m1 "^- $v " README.md || echo "VendorFarm $v")
           repo="https://github.com/${{ github.repository }}"
           raw="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}"
-          notes=$(printf '%s\n\n**Install:** download `VendorFarm-%s.zip` below and extract it into `World of Warcraft\\_forever_\\Interface\\AddOns`. Every feature: [README](%s#readme)\n' "$change" "$v" "$repo")
+          notes=$(printf '%s\n\n![VendorFarm](%s/screenshots/overview.jpg)\n\n**Install:** download `VendorFarm-%s.zip` below and extract it into `World of Warcraft\\_forever_\\Interface\\AddOns`. Screenshots and every feature: [README](%s#readme)\n' "$change" "$raw" "$v" "$repo")
           gh release create "v$v" "VendorFarm-$v.zip" --title "VendorFarm $v" --notes "$notes"
         env:
           GH_TOKEN: ${{ github.token }}
