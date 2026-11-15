@@ -1,22 +1,57 @@
 # VendorFarm 2.1.0
 
-Ranks the mobs around your level by expected **vendor gold per hour**, for WoW Forever.
+Find the best gold per hour for your level in WoW Forever. VendorFarm ranks the mobs, dungeons and gathering spots around your level by expected gold per hour. It starts from real drop-rate data and learns from every kill, node and catch you make.
 
-    gold/hr = (average coin + sum of drop chance x sell price) x kills per hour
+    gold/hr = (average coin + drop chance x price of every drop) x kills per hour
 
-- `/vfarm debug` toggles debug printing; `/vfarm check` shows what this client supports.
-- `/vfarm` opens the list for your level. `/vfarm 32` checks another level. `/vfarm options` opens the settings.
-- **Zone** toggle limits the list to your current zone. **Right-click** rows to pick farm targets; they stay on top and the status line shows their combined gold/hr.
-- **Dungeons tab** (`/vfarm dungeons`): every 5-man ranked by gold per full clear and gold/hr (max 5 runs an hour). Red names are above your level. Hover for run time, runs/hr and the biggest earners. Your runs are logged when you leave and replace the estimates.
-- **Compact tracker** (`/vfarm track`, or the minus button): session time, kills, seconds per kill, looted gold/hr and how it compares to the model.
-- Seconds per kill is learned from your real kills (gaps over 3 minutes count as breaks), starting from a 25s guess. Settings shows your pace and has a Reset pace button.
-- Hover a row to see its drops, drop %, and what each one is worth per kill. Click a row to drop a TomTom arrow on its main camp.
-- Window toggles: Elites, Dungeons, Skinning (adds leather/hides), AH price (uses Auctionator's last scan minus the 5% cut when it beats the vendor price).
-- Level range: type the lowest level in **From** (Enter), and pick +0 to +5 above your level in the dropdown.
-- Settings (Esc > Options > AddOns > VendorFarm): rows, rares, respawn cap.
+![VendorFarm next to the world map, with a farm target's spawn areas lit up in Thousand Needles](screenshots/overview.jpg)
+
+### Mobs
+Every mob in your level range, ranked by gold per hour. Hover a row for every drop, its chance, its price (vendor or Auctionator, with the scan's age) and what it adds per kill.
+
+| Mob list | Drop tooltip |
+|---|---|
+| ![Mobs tab ranked by gold per hour](screenshots/mobs.jpg) | ![Dust Devil tooltip with drops, prices and value per kill](screenshots/tooltip.jpg) |
+
+### Dungeons, History and Gathering
+| Dungeons | History |
+|---|---|
+| ![Dungeons ranked by gold per run and per hour](screenshots/dungeons.jpg) | ![Spots you farmed, ranked by the gold/hr you really made](screenshots/history.jpg) |
+
+![Gathering tab with Herbalism, Mining, Skinning and Fishing checkboxes](screenshots/gathering.jpg)
+
+### Compact tracker
+![Compact tracker: farming time, kills, pace, looted gold/hr and model](screenshots/tracker.jpg)
+
+## Features
+- **Mobs tab**: every mob in your level range, ranked by gold/hr. Set the range with the *From* box and a +0 to +5 dropdown. Toggles cover your current zone only, elites, dungeon mobs, skinning loot and Auctionator prices.
+- **Click a row** for a TomTom arrow to the mob's main camp, and click again to remove it. **Right-click** to make it a farm target: targets stay on top, show their combined gold/hr, and get **spawn dots on the world map and minimap**. Hovering a row with the world map open lights up that mob's spawns.
+- **Dungeons tab**: every 5-man ranked by gold per full clear and per hour, with the 5-instances-an-hour cap. Your own runs replace the estimates.
+- **Gathering tab**: Herbalism, Mining, Skinning and Fishing checkboxes, with your skill shown. Herb and ore nodes are ranked by zone, counting only nodes your skill can gather, along with the best fishing zones and skinnable mobs.
+- **History tab**: every farm session is saved (when you end it, or after 15 minutes without a kill). The spots you farmed are ranked by the gold/hr you really made, next to what the model predicted.
+- **Compact tracker** (`/vfarm track`): session time, kills, pace, gold looted and gold/hr, and "luck" against the model. Hover each line for the breakdown, such as coin vs. items, and vendor vs. AH totals.
+- **Nearest vendor button** (the bag icon): left-click for an arrow to the nearest friendly vendor, right-click for the nearest one that repairs.
+- **Minimap button**, plus a broker launcher for Titan, ChocolateBar and others.
+
+## It learns as you play
+- **Kill speed**: seconds per kill is learned overall and for each mob. Gaps over 3 minutes count as breaks. Elites get their own learned multiplier.
+- **Drop rates**: every corpse you loot is recorded. Your rates blend in and fully take over after 100 kills (you can change that in options). Mobs missing from the database show up once you've killed them. A green dot means your data, a blue dot means other players' data.
+- **Gathering**: nodes per hour and what nodes actually drop are learned for each zone, and the same goes for fishing.
+- **Shared, all inside the game**: VendorFarm users share kill, loot and gathering totals through hidden addon messages (guild, party/raid and a hidden channel). Each player counts for a limited amount and impossible numbers are thrown out. You can turn it off in options.
 
 ## Install
-Download `VendorFarm-<version>.zip` from Releases and extract it into `World of Warcraft\_forever_\Interface\AddOns`. Optional but recommended: QuestieDB (zones, spawns, friendly filter), TomTom (waypoints, spawn dots), Auctionator (AH prices).
+Download `VendorFarm-<version>.zip` from the latest [release](../../releases/latest) and extract it into `World of Warcraft\_forever_\Interface\AddOns`, so you have `AddOns\VendorFarm\VendorFarm.toc`.
+
+Works on its own. Recommended: **QuestieDB** (zones, spawn locations, friendly-NPC filter), **TomTom** (waypoints and spawn dots), **Auctionator** (AH prices).
+
+## Commands
+- `/vfarm` opens the list for your level. `/vfarm 32` checks another level.
+- `/vfarm dungeons`, `/vfarm gathering` and `/vfarm history` open a tab.
+- `/vfarm track` shows the compact tracker. `/vfarm minimap` shows or hides the minimap button. `/vfarm options` opens settings.
+- `/vfarm vendor` and `/vfarm repair` drop an arrow to the nearest vendor.
+- `/vfarm sync` shows the community data status.
+- `/vfarm resetdata` clears your recorded kills. `/vfarm clearhistory` clears saved sessions.
+- `/vfarm debug` toggles debug printing, and `/vfarm check` shows what this client supports. Include both in bug reports.
 
 ## Where the numbers come from
 - **Other players (1.6.0+):** VendorFarm users share kill/loot totals through hidden addon messages, all inside the game. Turn it off in settings.
