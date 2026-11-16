@@ -1,4 +1,4 @@
-# VendorFarm 2.1.0
+# VendorFarm 2.5.0
 
 Find the best gold per hour for your level in WoW Forever. VendorFarm ranks the mobs, dungeons and gathering spots around your level by expected gold per hour. It starts from real drop-rate data and learns from every kill, node and catch you make.
 
@@ -24,11 +24,11 @@ Every mob in your level range, ranked by gold per hour. Hover a row for every dr
 ![Compact tracker: farming time, kills, pace, looted gold/hr and model](screenshots/tracker.jpg)
 
 ## Features
-- **Mobs tab**: every mob in your level range, ranked by gold/hr. Set the range with the *From* box and a +0 to +5 dropdown. Toggles cover your current zone only, elites, dungeon mobs, skinning loot and Auctionator prices.
-- **Click a row** for a TomTom arrow to the mob's main camp, and click again to remove it. **Right-click** to make it a farm target: targets stay on top, show their combined gold/hr, and get **spawn dots on the world map and minimap**. Hovering a row with the world map open lights up that mob's spawns.
+- **Mobs tab**: every mob in your level range, ranked by gold/hr. Set the range with the *From* box and a +0 to +5 dropdown. The **zone dropdown** shows everything in your current zone, or any zone you want to scout, at every level. Toggles cover elites, dungeon mobs, skinning loot and Auctionator prices.
+- **Click rows** to track as many mobs as you like. Tracked mobs are highlighted and stay on top, show their combined gold/hr, get **spawn dots on the world map and minimap**, and the last one you picked gets a TomTom arrow to its main camp. Click again to stop tracking it. Hovering a row with the world map open lights up that mob's spawns.
 - **Dungeons tab**: every 5-man ranked by gold per full clear and per hour, with the 5-instances-an-hour cap. Your own runs replace the estimates.
-- **Gathering tab**: Herbalism, Mining, Skinning and Fishing checkboxes, with your skill shown. Herb and ore nodes are ranked by zone, counting only nodes your skill can gather, along with the best fishing zones and skinnable mobs.
-- **History tab**: every farm session is saved (when you end it, or after 15 minutes without a kill). The spots you farmed are ranked by the gold/hr you really made, next to what the model predicted.
+- **Gathering tab**: Herbalism, Mining, Skinning and Fishing checkboxes, with your skill shown. Herb and ore nodes are ranked by zone, counting only nodes your skill can gather, along with the best fishing zones and skinnable mobs. Tick **Skill-ups** to use it as a leveling guide instead: zones ranked by skill points per hour, with each node's colour for you and when to move on.
+- **History tab**: every farm session is saved when you end it, and ends by itself after 15 minutes without a kill, when you take a flight path, or when you go into or out of a dungeon. The spots you farmed are ranked by the gold/hr you really made, next to what the model predicted.
 - **Compact tracker** (`/vfarm track`): session time, kills, pace, gold looted and gold/hr, and "luck" against the model. Hover each line for the breakdown, such as coin vs. items, and vendor vs. AH totals.
 - **Nearest vendor button** (the bag icon): left-click for an arrow to the nearest friendly vendor, right-click for the nearest one that repairs.
 - **Minimap button**, plus a broker launcher for Titan, ChocolateBar and others.
@@ -67,6 +67,12 @@ Rebuild the data with `tools/build.py` (parse the CMaNGOS SQL dump with `tools/p
 GPL-3.0 (see LICENSE). Drop rates, vendors, herb/ore nodes and fishing loot come from the [CMaNGOS Classic-DB](https://github.com/cmangos/classic-db) (GPL-3.0). Zones and spawn coordinates are read at runtime from QuestieDB; waypoints and map pins use TomTom / HereBeDragons. No code from those addons is included.
 
 ## Changelog
+- 2.5.0 (2026-11-15): The Zone box is now a **zone dropdown**. "All zones" (the default) works as before: the best spots for your level range. "Current zone" is pinned at the top, and every other zone is listed A-Z with its mob levels, so you can scout places you aren't in. Picking any zone ignores the level range and shows everything there, on the Mobs and Gathering tabs. A ticked Zone box from before becomes "Current zone".
+- 2.4.1 (2026-11-15): The Zone box now ignores the level range on the Mobs tab: it lists every mob in your current zone, any level. Gathering already worked this way.
+- 2.4.0 (2026-11-15): **Skill-ups** box on the Gathering tab turns it into a leveling guide: zones are ranked by skill points per hour at your current Herbalism, Mining, Skinning or Fishing skill. Hover a zone to see each node's colour for you (orange, yellow, green, grey), when it goes grey, and roughly at what skill to move on. Chances start at the usual Classic values (orange 100%, yellow 75%, green 25%) and are learned from your own herbs, ore and fishing. Skinning now skips mobs your skill is too low to skin.
+- 2.3.1 (2026-11-15): One click does it all: clicking a mob tracks it (highlight, spawn dots, combined gold/hr) and moves the TomTom arrow to it. Clicking a tracked mob stops tracking it, and the arrow moves to another tracked mob if there is one. Right-click no longer does anything different.
+- 2.3.0 (2026-11-15): Farm targets (right-click a mob, as many as you like) are highlighted in the Mobs list with a gold band, as well as pinned to the top.
+- 2.2.0 (2026-11-15): Sessions end by themselves: after 15 minutes without a kill (checked every 30 seconds, so the tracker clears even if you stop killing), when you take a flight path, or when you enter or leave a dungeon or raid. A /reload in the same place doesn't count. The session goes to History as before if it had 10+ kills and 5+ minutes.
 - 2.1.0 (2026-11-14): Gathering data is shared like mob data (same channels and settings): what nodes and fishing drop per zone (item counts, so your own prices apply) and other players' nodes per hour as a better starting guess. Each player counts for at most 2000 nodes or catches per zone; impossible numbers are dropped. Your own pace still takes over after 20 nodes in a zone.
 - 2.0.0 (2026-11-14): Gathering tab. Checkboxes for Herbalism, Mining, Skinning and Fishing (ticked for the professions you have, with your skill shown). Herb and ore nodes are ranked per zone by gold/hr: value per node from CMaNGOS node loot x your prices, nodes up from spawn spots weighted by their spawn pools (only nodes your skill can gather), nodes per hour estimated until you gather 20 nodes in a zone, then your own pace. Fishing ranks zones by open-water loot x catches per hour (learned). Skinning shows the best skinnable mob per zone. The Zone box limits it to your current zone. `/vfarm gathering`.
 - 1.9.1 (2026-11-14): Tracker lines have hover tooltips: farming time and pace, a Looted breakdown (coin, items at vendor vs. AH price, totals both ways), and what Model and Luck mean.

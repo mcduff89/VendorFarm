@@ -108,8 +108,7 @@ local function showTooltip(row)
     GameTooltip:AddLine("|cff80c0ffAH|r = Auctionator's last scan (Nd = days old), used minus the 5% cut when it beats the vendor price.", 0.6, 0.6, 0.6, true)
   end
   GameTooltip:AddLine("|cff888888db|r = sell price not cached yet (Classic value).", 0.6, 0.6, 0.6, true)
-  GameTooltip:AddLine(ns.HasWaypoint(m.id) and "Left-click: remove the waypoint." or "Left-click: TomTom waypoint to the main camp.", 0.5, 1, 0.5)
-  GameTooltip:AddLine(r.target and "Right-click: remove from your farm targets." or "Right-click: add to your farm targets.", 0.5, 1, 0.5)
+  GameTooltip:AddLine(r.target and "Click: stop tracking this mob." or "Click: track it (highlight, spawn dots, TomTom arrow, combined gold/hr).", 0.5, 1, 0.5)
   GameTooltip:Show()
 end
 
@@ -118,6 +117,15 @@ local function makeRow(i)
   r:SetSize(W - 16, ROW_H)
   r:SetPoint("TOPLEFT", 8, -80 - (i - 1) * ROW_H)
   r:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+  -- farm-target highlight: soft gold band with a bar on the left
+  r.sel = r:CreateTexture(nil, "BACKGROUND")
+  r.sel:SetAllPoints(); r.sel:SetColorTexture(1, 0.82, 0, 0.14); r.sel:Hide()
+  r.selBar = r:CreateTexture(nil, "BORDER")
+  r.selBar:SetPoint("TOPLEFT"); r.selBar:SetPoint("BOTTOMLEFT"); r.selBar:SetWidth(2)
+  r.selBar:SetColorTexture(1, 0.82, 0, 0.9); r.selBar:Hide()
+  function r:SetSelected(on)
+    if on then self.sel:Show(); self.selBar:Show() else self.sel:Hide(); self.selBar:Hide() end
+  end
   local function fs(x, w, justify)
     local f = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     f:SetPoint("LEFT", x, 0); f:SetWidth(w); f:SetJustifyH(justify or "LEFT"); f:SetWordWrap(false)
@@ -135,7 +143,7 @@ local function makeRow(i)
   r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   r:SetScript("OnClick", function(self, btn)
     if not self.data or self.data.dungeon or not self.data.mob then return end
-    if btn == "RightButton" then ns.ToggleTarget(self.data.mob.id) else ns.Waypoint(self.data.mob) end
+    ns.ClickMob(self.data.mob)
   end)
   return r
 end
@@ -248,8 +256,38 @@ local function build()
     frame["cb_" .. key] = cb
     return cb.text or cb
   end
-  local a = toggle("Zone", "zoneOnly", nil)
-  a = toggle("Elites", "elites", a, 4)
+  -- Zone dropdown: nothing picked = best spots for your level range; a zone = everything there, any level
+  local function setZone(v) VendorFarmDB.zone = v; ns.Refresh() end
+  local function zoneLabel()
+    local z = VendorFarmDB.zone
+    if not z then return "All zones" end
+    if z == "@here" then return "Here: " .. ((GetRealZoneText and GetRealZoneText()) or "?") end
+    return z
+  end
+  local okZ, zdd = pcall(CreateFrame, "DropdownButton", nil, frame, "WowStyle1DropdownTemplate")
+  if okZ and zdd and zdd.SetupMenu then
+    zdd:SetWidth(132); zdd:SetPoint("TOPLEFT", 8, -24)
+    if zdd.SetDefaultText then zdd:SetDefaultText("All zones") end
+    zdd:SetupMenu(function(_, root)
+      if root.SetScrollMode then root:SetScrollMode(420) end
+      local here = (GetRealZoneText and GetRealZoneText()) or "?"
+      root:CreateRadio("|cffffd100Current zone:|r " .. here, function() return VendorFarmDB.zone == "@here" end, function() setZone("@here") end)
+      root:CreateRadio("All zones |cff888888(best for your level)|r", function() return VendorFarmDB.zone == nil end, function() setZone(nil) end)
+      if root.CreateDivider then root:CreateDivider() end
+      for _, z in ipairs(ns.ZoneList()) do
+        local name = z.name
+        root:CreateRadio(("%s |cff888888%d-%d|r"):format(name, z.lo, z.hi), function() return VendorFarmDB.zone == name end, function() setZone(name) end)
+      end
+    end)
+  else
+    -- Fallback: a button that switches between all zones and your current zone.
+    zdd = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    zdd:SetSize(110, 18); zdd:SetPoint("TOPLEFT", 8, -26)
+    zdd:SetScript("OnClick", function() setZone(VendorFarmDB.zone and nil or "@here") end)
+  end
+  zdd.label = zoneLabel
+  frame.zoneDD = zdd
+  local a = toggle("Elites", "elites", zdd, 8)
   a = toggle("Dungeons", "dungeons", a, 4)
   a = toggle("Skinning", "skinning", a, 4)
   toggle("AH price", "useAH", a, 4)
@@ -269,6 +307,23 @@ local function build()
     cb:SetScript("OnClick", function(s) VendorFarmDB[s.key] = s:GetChecked() and true or false; ns.Refresh() end)
     frame.gChecks[#frame.gChecks + 1] = cb
     ga = cb.text or cb
+  end
+  -- Skill-ups: rank by skill points per hour instead of gold
+  do
+    local cb = CreateFrame("CheckButton", nil, frame.gRow, "UICheckButtonTemplate")
+    cb:SetSize(20, 20)
+    cb:SetPoint("LEFT", ga, "RIGHT", 14, 0)
+    cb.text = cb.text or cb.Text
+    if cb.text then cb.text:SetFontObject("GameFontHighlightSmall"); cb.text:SetText("|cffffd100Skill-ups|r") end
+    cb:SetScript("OnClick", function(s) VendorFarmDB.gSkillUp = s:GetChecked() and true or false; ns.Refresh() end)
+    cb:SetScript("OnEnter", function(s)
+      GameTooltip:SetOwner(s, "ANCHOR_TOP")
+      GameTooltip:AddLine("Skill-ups")
+      GameTooltip:AddLine("Rank by skill points per hour at your current skill instead of gold/hr. Hover a row for node colours and when to move on.", 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    frame.gSkillCheck = cb
   end
 
   statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -298,6 +353,7 @@ end
 
 function ns.Refresh(newLevel)
   if not frame or not frame:IsShown() then return end
+  for _, row in ipairs(rows) do row:SetSelected(false) end
   local gathering = VendorFarmDB.tab == "gathering"
   OFF = gathering and 22 or 0
   frame.gRow:SetShown(gathering)
@@ -309,7 +365,10 @@ function ns.Refresh(newLevel)
   if not fromBox:HasFocus() then fromBox:SetText(tostring(math.max(1, level - db.below))) end
   toText:SetText(("to %d%s"):format(level, overrideLevel and " |cff888888(/vfarm)|r" or ""))
   if plusDD.GenerateMenu then plusDD:GenerateMenu() elseif plusDD.SetText then plusDD:SetText("+" .. db.above) end
-  for _, k in ipairs({ "zoneOnly", "elites", "dungeons", "skinning", "useAH" }) do
+  if frame.zoneDD.GenerateMenu then frame.zoneDD:GenerateMenu() end
+  if frame.zoneDD.SetText and not frame.zoneDD.SetupMenu then frame.zoneDD:SetText(frame.zoneDD.label()) end
+  if frame.zoneDD.OverrideText then frame.zoneDD:OverrideText(frame.zoneDD.label()) end
+  for _, k in ipairs({ "elites", "dungeons", "skinning", "useAH" }) do
     if frame["cb_" .. k] then frame["cb_" .. k]:SetChecked(VendorFarmDB[k]) end
   end
   local dungeons = db.tab == "dungeons"
@@ -323,7 +382,12 @@ function ns.Refresh(newLevel)
     or { "Mob", "Lvl", "Zone", "Per kill", "Gold/hr" }
   for i, h in ipairs(headers) do h:SetText(names[i]) end
   if gathering then
-    for i, h in ipairs(headers) do h:SetText(({ "Zone / gathering", "Lvl", "Nodes up / rate", "Per node", "Gold/hr" })[i]) end
+    local skillMode = db.gSkillUp
+    frame.gSkillCheck:SetChecked(skillMode and true or false)
+    for i, h in ipairs(headers) do
+      h:SetText((skillMode and { "Zone / gathering", "Lvl", "Nodes up / rate", "Chance", "Points/hr" }
+        or { "Zone / gathering", "Lvl", "Nodes up / rate", "Per node", "Gold/hr" })[i])
+    end
     local sk = ns.ProfSkills()
     for _, cb in ipairs(frame.gChecks) do
       cb:SetChecked(db[cb.key])
@@ -335,7 +399,11 @@ function ns.Refresh(newLevel)
     elseif state == "failed" and (db.gHerb or db.gOre) then
       statusText:SetText("Couldn't place herb/ore spots into zones on this client. Fishing and skinning still work. Try /vfarm check.")
     else
-      statusText:SetText(("%d results%s. Rates say est until you've gathered or fished there; hover for the breakdown."):format(#list, db.zoneOnly and " in this zone" or ""))
+      if skillMode then
+        statusText:SetText(("%d results%s, ranked by skill points per hour at your current skill. Hover for node colours and when to move on."):format(#list, ns.SelectedZone() and (" in " .. ns.SelectedZone()) or ""))
+      else
+        statusText:SetText(("%d results%s. Rates say est until you've gathered or fished there; hover for the breakdown."):format(#list, ns.SelectedZone() and (" in " .. ns.SelectedZone()) or ""))
+      end
     end
     for i = 1, db.rows do
       local row, r = rows[i], list[i]
@@ -345,8 +413,14 @@ function ns.Refresh(newLevel)
         row.name:SetText(r.name .. "  " .. col .. r.tag .. "|r")
         row.lvl:SetText(r.lvl or "")
         row.zone:SetText(r.rate)
-        row.kill:SetText(money(r.per))
-        row.hour:SetText(money(r.perHour))
+        if skillMode then
+          local hex = r.col and ns.SkillHex[r.col]
+          row.kill:SetText((hex and ("|cff" .. hex) or "") .. ("%d%%"):format((r.pts or 0) * 100 + 0.5) .. (hex and "|r" or ""))
+          row.hour:SetText(("%d pts/hr"):format((r.ptsHour or 0) + 0.5))
+        else
+          row.kill:SetText(money(r.per))
+          row.hour:SetText(money(r.perHour))
+        end
         row:Show()
       else
         row:Hide()
@@ -406,10 +480,13 @@ function ns.Refresh(newLevel)
   local list = ns.Rank(level)
   local est = ns.TargetEstimate()
   if est then
-    statusText:SetText(("Targets together: |cffffffff%s/hr|r at %ds per kill. Right-click rows to add or remove."):format(money(est), db.killSec))
+    statusText:SetText(("Targets together: |cffffffff%s/hr|r at %ds per kill. Click rows to add or remove."):format(money(est), db.killSec))
+  elseif ns.SelectedZone() then
+    statusText:SetText(("All mobs in %s, any level, %ds per kill%s. %d matches. Click a row to track it."):format(
+      ns.SelectedZone(), db.killSec, (db.killSamples or 0) >= 5 and " (your pace)" or " (starting guess)", #list))
   else
-    statusText:SetText(("Mobs %d-%d%s, %ds per kill%s. %d matches. Right-click a row to pick it as a target."):format(
-      math.max(1, level - db.below), level + db.above, db.zoneOnly and " here" or "", db.killSec, (db.killSamples or 0) >= 5 and " (your pace)" or " (starting guess)", #list))
+    statusText:SetText(("Mobs %d-%d%s, %ds per kill%s. %d matches. Click a row to track it."):format(
+      math.max(1, level - db.below), level + db.above, "", db.killSec, (db.killSamples or 0) >= 5 and " (your pace)" or " (starting guess)", #list))
   end
   for i = 1, db.rows do
     local row, r = rows[i], list[i]
@@ -421,6 +498,7 @@ function ns.Refresh(newLevel)
       if VendorFarmDB.learn and o and o.k and o.k > 0 then
         mark = ((o.ownK or o.k) > 0) and " |cff66ff66•|r" or " |cff66ccff•|r"   -- green: yours, blue: community only
       end
+      row:SetSelected(r.target)
       row.name:SetText((r.target and "|cffffd100>|r " or "") .. m.name .. (m.rank ~= 0 and " |cffffd100*|r" or "") .. mark)
       row.lvl:SetText(m.minL == m.maxL and m.minL or (m.minL .. "-" .. m.maxL))
       row.zone:SetText((ns.ZoneName(m)))

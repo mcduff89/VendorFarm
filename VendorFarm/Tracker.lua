@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 local BREAK = 180        -- a gap longer than this between kills is a break, not farming time
-local SESSION_GAP = 900  -- 15 minutes without a kill ends the session (it goes to History)
+local SESSION_GAP = 900  -- 15 minutes without a kill ends the session (it goes to History) automatically
 local ALPHA = 0.15       -- how fast the learned seconds-per-kill follows your recent kills
 local tf, lines
 local lastKill           -- GetTime() of the previous kill (this login)
@@ -105,6 +105,58 @@ local function resetSession()
   lastKill = nil
   ns.RefreshTracker()
 end
+
+-- Automatic session end: 15 minutes without a kill, taking a flight path,
+-- or going into (or out of) a dungeon/raid. Only when the session has kills.
+local function autoEnd(reason)
+  local s = VendorFarmDB.session
+  if not s or (s.kills or 0) == 0 then return end
+  local saved = ns.ArchiveSession()
+  VendorFarmDB.session = nil
+  lastKill = nil
+  print(("|cffffd100VendorFarm|r: session ended (%s)%s."):format(reason, saved and ", saved to History" or ""))
+  ns.RefreshTracker()
+end
+ns.AutoEndSession = autoEnd
+
+local function idleCheck()
+  local s = VendorFarmDB and VendorFarmDB.session
+  if s and s.last and time() - s.last > SESSION_GAP then autoEnd("15 minutes without a kill") end
+  if UnitOnTaxi and UnitOnTaxi("player") then autoEnd("flight path") end
+end
+
+local function instanceKey()
+  local inInst, kind = IsInInstance()
+  if inInst and (kind == "party" or kind == "raid") then
+    local name, _, _, _, _, _, _, id = GetInstanceInfo()
+    return tostring(id or name)
+  end
+  return "world"
+end
+
+local ev = CreateFrame("Frame")
+ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+ev:RegisterEvent("PLAYER_CONTROL_LOST")
+ev:SetScript("OnEvent", function(_, event)
+  if not VendorFarmDB then return end
+  if event == "PLAYER_CONTROL_LOST" then
+    C_Timer.After(1, function()
+      if UnitOnTaxi and UnitOnTaxi("player") then autoEnd("flight path") end
+    end)
+    return
+  end
+  C_Timer.After(1, function()
+    local key = instanceKey()
+    local prev = VendorFarmDB.lastInstance
+    VendorFarmDB.lastInstance = key
+    -- a /reload or relog in the same place is not a zone change
+    if prev and prev ~= key then
+      autoEnd(key == "world" and "left the dungeon" or "entered a dungeon")
+    end
+    idleCheck()
+  end)
+end)
+if C_Timer.NewTicker then C_Timer.NewTicker(30, idleCheck) end
 
 local function build()
   tf = CreateFrame("Frame", "VendorFarmTracker", UIParent, "BackdropTemplate")
@@ -227,7 +279,7 @@ function ns.TrackerTooltip(i)
       end
       note("Plan: the model's gold/hr if you kill your targets in rotation. \"of plan\" compares what you're actually making against it.")
     else
-      note("Right-click mobs in the list to make them targets. They get spawn dots on the map and a planned gold/hr here.")
+      note("Click mobs in the list to track them. They get spawn dots on the map and a planned gold/hr here.")
     end
   end
 end
@@ -258,7 +310,7 @@ function ns.RefreshTracker()
     local eff = (actual > 0 and est > 0) and ("  |  |cffffffff%d%%|r of plan"):format(actual / est * 100) or ""
     lines[4]:SetText(("Targets %s/hr%s"):format(money(est), eff))
   else
-    lines[4]:SetText("|cff888888No targets: right-click mobs in the list.|r")
+    lines[4]:SetText("|cff888888No targets: click mobs in the list.|r")
   end
 end
 

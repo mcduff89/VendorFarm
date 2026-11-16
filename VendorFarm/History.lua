@@ -92,8 +92,8 @@ function ns.HistoryTooltip(owner, sp)
   GameTooltip:AddLine(" ")
   GameTooltip:AddLine("A session ends when you reset the tracker or go 15 minutes without a kill. Under 10 kills or 5 minutes isn't saved.", 0.6, 0.6, 0.6, true)
   if sp.mob then
-    GameTooltip:AddLine(ns.HasWaypoint(sp.mob.id) and "Left-click: remove the waypoint." or "Left-click: TomTom waypoint to the main camp.", 0.5, 1, 0.5)
-    GameTooltip:AddLine("Right-click: add or remove as a farm target.", 0.5, 1, 0.5)
+    local tracked = VendorFarmDB.targets and VendorFarmDB.targets[sp.mob.id]
+    GameTooltip:AddLine(tracked and "Click: stop tracking this mob." or "Click: track this mob (spawn dots, TomTom arrow).", 0.5, 1, 0.5)
   end
   GameTooltip:Show()
 end

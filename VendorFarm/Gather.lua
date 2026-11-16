@@ -13,19 +13,57 @@ local CONT = { [0] = 1415, [1] = 1414 }   -- Eastern Kingdoms, Kalimdor
 
 -- Profession skills ---------------------------------------------------------
 function ns.ProfSkills()
-  local out = {}
-  if not (GetProfessions and GetProfessionInfo) then return out end
+  local out, names = {}, {}
+  if not (GetProfessions and GetProfessionInfo) then return out, names end
   local list = { GetProfessions() }
   for i = 1, 6 do
     local idx = list[i]
     if idx then
-      local ok, _, _, level, _, _, _, line = pcall(GetProfessionInfo, idx)
+      local ok, name, _, level, _, _, _, line = pcall(GetProfessionInfo, idx)
       if ok and line then
-        for k, id in pairs(SKILL) do if id == line then out[k] = level end end
+        for k, id in pairs(SKILL) do if id == line then out[k] = level; names[k] = name end end
       end
     end
   end
-  return out
+  return out, names
+end
+
+-- Skill-ups -----------------------------------------------------------------
+-- Gathering colours: orange until required skill +25, yellow until +50, green until +100, then grey.
+-- Starting chances of a point per gather are the usual Classic ones; your own gathers take over.
+local COLOR_P = { orange = 1, yellow = 0.75, green = 0.25, grey = 0 }
+local COLOR_HEX = { orange = "ff8040", yellow = "ffff00", green = "40c040", grey = "9d9d9d" }
+local SKILL_FULL = 30
+ns.SkillHex = COLOR_HEX
+
+function ns.SkillColor(skill, req)
+  if not skill or not req or skill < req then return nil end
+  local d = skill - req
+  return d < 25 and "orange" or (d < 50 and "yellow" or (d < 100 and "green" or "grey"))
+end
+
+-- Skinning needs: mob level 1-10 -> 1, 11-20 -> (level - 10) x 10, 21+ -> level x 5.
+function ns.SkinReq(lvl)
+  if lvl <= 10 then return 1 end
+  if lvl <= 20 then return (lvl - 10) * 10 end
+  return lvl * 5
+end
+
+local function fishDefault(skill)
+  skill = skill or 1
+  if skill < 75 then return 1 end
+  return math.max(0.1, 1 - (skill - 75) / 250)
+end
+
+-- chance of a point: key is a colour, or "fish" (needs your fishing skill)
+function ns.SkillChance(key, skill)
+  if not key then return 0 end
+  local est = key == "fish" and fishDefault(skill) or COLOR_P[key] or 0
+  if key == "grey" then return 0 end
+  local l = VendorFarmDB.skillRolls and VendorFarmDB.skillRolls[key]
+  if not l or (l.n or 0) == 0 then return est, 0 end
+  local w = math.min(1, l.n / SKILL_FULL)
+  return (1 - w) * est + w * l.e, w
 end
 
 -- Zone of the player (walk up from subzones/cities to the zone map).
@@ -181,10 +219,13 @@ function ns.GatherRank(level)
   local skills = ns.ProfSkills()
   local out = {}
   if mapState == "idle" then startMapping() end
-  local here = db.zoneOnly and zoneMap()
+  local pick = db.zone
+  local here = pick == "@here" and zoneMap()
+  local pickName = pick and pick ~= "@here" and pick
   local maxSkill = math.min(300, level * 5)
-  local hSkill = skills.herb or maxSkill
-  local oSkill = skills.ore or maxSkill
+  local skillMode = db.gSkillUp
+  local hSkill = skills.herb or (skillMode and 1 or maxSkill)
+  local oSkill = skills.ore or (skillMode and 1 or maxSkill)
   local mounted = level >= 40
 
   local function levels(z)
@@ -194,6 +235,7 @@ function ns.GatherRank(level)
   end
   local function okZone(z)
     if here then return z == here end
+    if pickName then return zoneName(z) == pickName end
     local lo = levels(z)
     return not lo or lo <= level + db.above + 3
   end
@@ -206,16 +248,21 @@ function ns.GatherRank(level)
   if (db.gHerb or db.gOre) and mapState == "done" then
     for z, list in pairs(zoneNodes) do
       if okZone(z) then
-        local up, value, parts = 0, 0, {}
+        local up, value, parts, pts, all = 0, 0, {}, 0, {}
         for id, w in pairs(list) do
           local nd = nodes[id]
+          if nd and ((nd.kind == 1 and db.gHerb) or (nd.kind == 2 and db.gOre)) then
+            all[#all + 1] = { skill = nd.skill, kind = nd.kind, w = w }
+          end
           if nd and ((nd.kind == 1 and db.gHerb and nd.skill <= hSkill) or (nd.kind == 2 and db.gOre and nd.skill <= oSkill)) then
             local v = lootValue(nd.items)
-            up = up + w; value = value + w * v
-            parts[#parts + 1] = { id = id, name = nd.name, skill = nd.skill, kind = nd.kind, w = w, v = v }
+            local col = ns.SkillColor(nd.kind == 1 and hSkill or oSkill, nd.skill)
+            local p = ns.SkillChance(col)
+            up = up + w; value = value + w * v; pts = pts + w * p
+            parts[#parts + 1] = { id = id, name = nd.name, skill = nd.skill, kind = nd.kind, w = w, v = v, col = col, p = p }
           end
         end
-        if up >= 1 then
+        if up >= 1 and not (skillMode and pts <= 0) then
           local st = ns.CombinedGather(z)
           local perEst = value / up
           local per, vw = blend(perEst, itemsValue(st.i, st.n, st.c), st.n, VALUE_FULL)
@@ -229,7 +276,8 @@ function ns.GatherRank(level)
           out[#out + 1] = { kind = "nodes", zone = z, name = zoneName(z), tag = tag, lvl = lvlText(z),
             rate = ("~%d up, %d/hr%s"):format(up + 0.5, nph + 0.5, rw >= 1 and "" or " est"),
             per = per, perHour = per * nph, up = up, nph = nph, nphEst = nphEst, rw = rw, vw = vw,
-            perEst = perEst, parts = parts, st = st }
+            perEst = perEst, parts = parts, st = st, all = all, hSkill = hSkill, oSkill = oSkill,
+            pts = pts / up, ptsHour = pts / up * nph }
         end
       end
     end
@@ -238,6 +286,8 @@ function ns.GatherRank(level)
   -- fishing
   if db.gFish then
     local catches = blend(FISH_DEFAULT, db.fishGap and 3600 / db.fishGap or nil, db.fishN or 0, FISH_FULL)
+    local fSkill = skills.fish or 1
+    local fp = ns.SkillChance("fish", fSkill)
     for area in pairs(ns.FISH) do
       local z = ns.UiMapForArea and ns.UiMapForArea(area)
       if z and okZone(z) then
@@ -248,7 +298,8 @@ function ns.GatherRank(level)
           local per, vw = blend(vEst, itemsValue(st.f, st.fn, st.fc), st.fn, FISH_FULL)
           out[#out + 1] = { kind = "fish", zone = z, name = zoneName(z), tag = "Fishing", lvl = lvlText(z),
             rate = ("%d catches/hr%s"):format(catches + 0.5, (db.fishN or 0) >= FISH_FULL and "" or " est"),
-            per = per, perHour = per * catches, items = items, vw = vw, st = st }
+            per = per, perHour = per * catches, items = items, vw = vw, st = st,
+            pts = fp, ptsHour = fp * catches, fSkill = fSkill }
         end
       end
     end
@@ -256,24 +307,35 @@ function ns.GatherRank(level)
 
   -- skinning: best skinnable mob per zone in your level range (kills/hr x skinning loot only)
   if db.gSkin then
-    local keepZone, keepSkin = db.zoneOnly, db.skinning
-    db.zoneOnly = false
-    local ok, list = pcall(ns.Rank, level)
-    db.zoneOnly = keepZone
+    -- a picked zone: Rank lists that zone's mobs at any level; otherwise your level range everywhere
+    -- for skill-ups, look at mobs around the level your skinning skill is made for
+    local rankLvl = level
+    if skillMode and skills.skin then
+      local s = skills.skin
+      local lv = s >= 100 and math.floor(s / 5) or (s >= 10 and math.floor(s / 10) + 10 or 10)
+      rankLvl = math.max(1, math.min(level, lv + 2))
+    end
+    local ok, list = pcall(ns.Rank, rankLvl)
     if ok then
       local best = {}
+      local sSkill = skills.skin or (skillMode and 1 or nil)
       for _, r in ipairs(list) do
         local m = r.mob
         local _, _, _, skin = ns.Effective(m)
         local sv = lootValue(skin)
-        if sv > 0 then
+        local req = ns.SkinReq(m.maxL or m.minL or 1)
+        local col = sSkill and ns.SkillColor(sSkill, req)
+        local p = col and ns.SkillChance(col) or 0
+        if sv > 0 and (not sSkill or req <= sSkill) and not (skillMode and p <= 0) then
           local zn, area = ns.ZoneName(m)
           local z = area and ns.UiMapForArea(area)
-          if z and okZone(z) then
+          if z and (pick or okZone(z)) then
             local hr = sv * r.kph
-            if not best[z] or hr > best[z].perHour then
+            local score = skillMode and p * r.kph or hr
+            if not best[z] or score > best[z].score then
               best[z] = { kind = "skin", zone = z, name = zoneName(z), tag = "Skinning: " .. m.name, lvl = lvlText(z),
-                rate = ("%d kills/hr"):format(r.kph + 0.5), per = sv, perHour = hr, mob = m }
+                rate = ("%d kills/hr"):format(r.kph + 0.5), per = sv, perHour = hr, mob = m,
+                pts = p, ptsHour = p * r.kph, col = col, req = req, sSkill = sSkill, score = score }
             end
           end
         end
@@ -282,7 +344,14 @@ function ns.GatherRank(level)
     end
   end
 
-  table.sort(out, function(a, b) return a.perHour > b.perHour end)
+  if skillMode then
+    table.sort(out, function(a, b)
+      if math.abs((a.ptsHour or 0) - (b.ptsHour or 0)) > 0.5 then return (a.ptsHour or 0) > (b.ptsHour or 0) end
+      return a.perHour > b.perHour
+    end)
+  else
+    table.sort(out, function(a, b) return a.perHour > b.perHour end)
+  end
   return out, mapState, progress
 end
 
@@ -293,6 +362,57 @@ function ns.GatherTooltip(owner, r)
   tt:AddLine(r.name .. "  |cffaaaaaa" .. r.tag .. "|r", 1, 1, 1)
   local function row(l, v) tt:AddDoubleLine(l, v, 0.8, 0.8, 0.8, 1, 1, 1) end
   local function note(t) tt:AddLine(t, 0.6, 0.6, 0.6, true) end
+  local skillMode = VendorFarmDB.gSkillUp
+  local function pct(p) return ("%d%%"):format((p or 0) * 100 + 0.5) end
+  if skillMode then
+    row("Skill-ups per hour", ("~%d"):format((r.ptsHour or 0) + 0.5))
+    row(r.kind == "nodes" and "Chance per node" or (r.kind == "fish" and "Chance per catch" or "Chance per skin"), pct(r.pts))
+  end
+  if skillMode and r.kind == "nodes" then
+    tt:AddLine(" ")
+    table.sort(r.parts, function(a, b) return a.w * (a.p or 0) > b.w * (b.p or 0) end)
+    for i = 1, math.min(#r.parts, 10) do
+      local q = r.parts[i]
+      local hex = COLOR_HEX[q.col or "grey"]
+      tt:AddDoubleLine(("|cff%s%s|r |cff888888(%d)|r  ~%.1f up"):format(hex, q.name, q.skill, q.w),
+        ("%s, grey at %d"):format(pct(q.p), q.skill + 100), 1, 1, 1, 1, 1, 1)
+    end
+    -- when this zone stops paying: average chance over the nodes you could gather at that skill
+    local function avgP(d)
+      local sw, sp = 0, 0
+      for _, q in ipairs(r.all) do
+        local s = (q.kind == 1 and r.hSkill or r.oSkill) + d
+        if q.skill <= s then sw = sw + q.w; sp = sp + q.w * ns.SkillChance(ns.SkillColor(s, q.skill)) end
+      end
+      return sw > 0 and sp / sw or 0
+    end
+    local moveAt
+    for d = 1, 300 do
+      local s = math.max(r.hSkill, r.oSkill) + d
+      if s > 300 then break end
+      if avgP(d) < 0.35 then moveAt = s; break end
+    end
+    tt:AddLine(" ")
+    if moveAt then note(("Move on at about skill %d: most nodes here are green or grey by then."):format(moveAt)) end
+    note("Orange nodes always give a point, yellow usually, green sometimes, grey never. Chances start at the usual Classic values and switch to what your own gathering shows after 30 gathers of each colour.")
+    tt:Show()
+    return
+  end
+  if skillMode and r.kind == "skin" then
+    row("Mob", ("%s (level %s)"):format(r.mob.name, r.mob.maxL or r.mob.minL or "?"))
+    row("Kills per hour", r.rate)
+    tt:AddDoubleLine("Needs skill", ("|cff%s%d|r, grey at %d"):format(COLOR_HEX[r.col or "grey"], r.req, r.req + 100), 0.8, 0.8, 0.8, 1, 1, 1)
+    row("Skinning loot per kill", money(r.per))
+    tt:AddLine(" ")
+    note("Skinning skill needed: mob level x5 from level 21 (level 11-20: (level-10) x10). Pick mobs that are orange or yellow for you.")
+    tt:Show()
+    return
+  end
+  if skillMode and r.kind == "fish" then
+    row("Fishing skill", r.fSkill)
+    note("Fishing gives a point on most catches early on, and less often as your skill rises. The chance is learned from your own catches. Low-level water is fine for skill-ups; zone doesn't change the chance.")
+    tt:AddLine(" ")
+  end
   if r.kind == "nodes" then
     row("Nodes up at a time (you can gather)", ("~%d"):format(r.up + 0.5))
     row("Nodes per hour", ("%d%s"):format(r.nph + 0.5, r.rw >= 1 and " (yours)" or (r.st.gn > 0 and (" (%d%% yours)"):format(math.min(1, r.st.gn / NODE_FULL) * 100) or (r.st.oGn > 0 and " (from other players)" or " (estimate)"))))
@@ -336,6 +456,36 @@ end
 local seen = {}
 local lastGather, lastFish
 
+-- Skill-up chances: each gather or catch is a roll of its colour ("fish" for fishing); a
+-- "Your skill in X has increased" message within 4 seconds either side counts as a hit.
+local pending, lastSkillMsg
+local function rollDone(p)
+  local db = VendorFarmDB
+  db.skillRolls = db.skillRolls or {}
+  local l = db.skillRolls[p.key] or { n = 0, e = 0 }
+  local hit = p.hit and 1 or 0
+  l.e = l.n == 0 and hit or (l.e * (1 - ALPHA) + hit * ALPHA)
+  l.n = l.n + 1
+  db.skillRolls[p.key] = l
+  ns.Debug("skill roll %s: %s (%d rolls, %.0f%%)", p.key, p.hit and "point" or "no point", l.n, l.e * 100)
+end
+local function roll(key, profName)
+  if not key or key == "grey" or not profName then return end
+  local p = { key = key, name = profName, t = GetTime() }
+  if lastSkillMsg and not lastSkillMsg.used and GetTime() - lastSkillMsg.t < 4 and lastSkillMsg.msg:find(profName, 1, true) then
+    p.hit = true; lastSkillMsg.used = true
+  end
+  pending = p
+  C_Timer.After(4, function() if pending == p then pending = nil end; rollDone(p) end)
+end
+local function onSkillMsg(msg)
+  if type(msg) ~= "string" or (issecretvalue and issecretvalue(msg)) then return end
+  if pending and not pending.hit and GetTime() - pending.t < 4 and msg:find(pending.name, 1, true) then
+    pending.hit = true; return
+  end
+  lastSkillMsg = { t = GetTime(), msg = msg }
+end
+
 -- Adds one loot window into item counts + coin; returns its value at your prices (for debug).
 local function recordSlots(n, items)
   local coin, v = 0, 0
@@ -374,6 +524,8 @@ local function onLoot()
       db.fishN = (db.fishN or 0) + 1
     end
     lastFish = now
+    local _, names = ns.ProfSkills()
+    roll("fish", names.fish)
     ns.Debug("fishing catch in %s worth %d", zoneName(z), v)
     return
   end
@@ -393,6 +545,9 @@ local function onLoot()
     st.gn = st.gn + 1
   end
   lastGather = now
+  local sk, names = ns.ProfSkills()
+  local kind = nodes[entry].kind == 1 and "herb" or "ore"
+  roll(ns.SkillColor(sk[kind], nodes[entry].skill), names[kind])
   if ns.SyncMarkGather then ns.SyncMarkGather(z) end
   ns.Debug("gathered %s in %s worth %d (%d here)", nodes[entry].name, zoneName(z), v, st.n)
 end
@@ -400,7 +555,9 @@ end
 local f = CreateFrame("Frame")
 f:RegisterEvent("LOOT_READY")
 f:RegisterEvent("PLAYER_LOGIN")
-f:SetScript("OnEvent", function(_, ev)
+f:RegisterEvent("CHAT_MSG_SKILL")
+f:SetScript("OnEvent", function(_, ev, msg)
+  if ev == "CHAT_MSG_SKILL" then pcall(onSkillMsg, msg); return end
   if ev == "PLAYER_LOGIN" then
     -- first run: tick the gathering professions you have
     local db = VendorFarmDB

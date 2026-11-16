@@ -92,7 +92,6 @@ function ns.InitOptions()
   check(p, "Add skinning loot", "skinning", y, "Adds leather and hides at vendor price (or AH price if that's on)."); y = y - 24
   check(p, "Use Auctionator price when higher", "useAH", y, "Non-grey items use Auctionator's last scan minus the 5% AH cut, when that beats the vendor price."); y = y - 24
   check(p, "Learn drop rates from my kills", "learn", y, "Records your kills, coin and loot per mob. Your rates blend in as kills grow and fully replace the database at the kill count above. Mobs marked with a green dot have your data. /vfarm resetdata clears it."); y = y - 24
-  check(p, "Only mobs in my current zone", "zoneOnly", y); y = y - 24
   check(p, "Share my drop data with other VendorFarm users", "syncShare", y, "Sends your kill, coin and loot totals per mob through hidden addon messages (guild, party and the hidden channel below). Only counts, nothing else. Paused in combat and in instances."); y = y - 24
   check(p, "Use other players' drop data", "syncUse", y, "Blends everyone's kills into the drop rates. Each player counts for at most 500 kills per mob, and impossible numbers are thrown out. Blue dot = community data only."); y = y - 24
   check(p, "Use the hidden VendorFarmSync channel", "syncPublic", y, "Joins a hidden chat channel so you can share with every VendorFarm user online, not just your guild and group. Takes effect after /reload."); y = y - 24

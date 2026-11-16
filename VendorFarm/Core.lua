@@ -1,6 +1,6 @@
 -- VendorFarm Core: data parsing, pricing and the gold/hr model.
 local ADDON, ns = ...
-ns.VERSION = "2.1.0"
+ns.VERSION = "2.5.0"
 
 local DEFAULTS = {
   below = 4,          -- levels under you to include
@@ -16,7 +16,7 @@ local DEFAULTS = {
   rows = 20,
   learn = true,       -- record your own kills and loot
   learnFull = 100,     -- kills until your own drop rates fully replace the database
-  zoneOnly = false,   -- only mobs in your current zone
+  zone = nil,         -- zone dropdown: nil = best for your level range, "@here" = current zone, or a zone name
   autoKill = true,    -- learn seconds per kill from your real kills
   targets = nil,      -- [npcID] = true: mobs you picked to farm
   trackerShown = false,
@@ -25,7 +25,7 @@ local DEFAULTS = {
   syncUse = true,     -- blend other players' totals into the drop rates
   syncPublic = true,  -- also use the hidden VendorFarmSync channel (not just guild/party)
   minimap = true,     -- show the minimap button
-  gHerb = nil, gOre = nil, gSkin = nil, gFish = nil, -- Gathering tab checkboxes (default: the professions you have)
+  gHerb = nil, gOre = nil, gSkin = nil, gFish = nil, gSkillUp = false, -- Gathering tab checkboxes (default: the professions you have)
   spawnPins = true,   -- spawn dots on the world map/minimap for selected mobs, and row-hover preview
   minimapAngle = 200,
   debug = false,      -- print what VendorFarm reads (/vfarm debug)
@@ -255,6 +255,35 @@ function ns.ZoneName(m)
   return m.map == 0 and "Eastern Kingdoms" or "Kalimdor"
 end
 
+-- Zone dropdown -------------------------------------------------------------
+-- The picked zone's name (current zone resolved), or nil when nothing is picked.
+function ns.SelectedZone()
+  local z = VendorFarmDB and VendorFarmDB.zone
+  if z == "@here" then return (GetRealZoneText and GetRealZoneText()) or (GetZoneText and GetZoneText()) end
+  return z
+end
+
+-- Every open-world zone with mobs in the data, A-Z, with its mob level range (built once).
+local zoneList
+function ns.ZoneList()
+  if zoneList then return zoneList end
+  local by = {}
+  for _, m in ipairs(ns.Parse()) do
+    if m.map <= 1 then
+      local name = ns.ZoneName(m)
+      if name and name ~= "Eastern Kingdoms" and name ~= "Kalimdor" then
+        local z = by[name] or { name = name, lo = m.minL, hi = m.maxL, n = 0 }
+        z.lo = math.min(z.lo, m.minL); z.hi = math.max(z.hi, m.maxL); z.n = z.n + 1
+        by[name] = z
+      end
+    end
+  end
+  zoneList = {}
+  for _, z in pairs(by) do if z.n >= 3 then zoneList[#zoneList + 1] = z end end
+  table.sort(zoneList, function(a, b) return a.name < b.name end)
+  return zoneList
+end
+
 function ns.Rank(level)
   local db = VendorFarmDB
   level = level or UnitLevel("player")
@@ -272,7 +301,7 @@ function ns.Rank(level)
     end
   end
   ns.byId = ns.byId or {}
-  local here = db.zoneOnly and ((GetRealZoneText and GetRealZoneText()) or (GetZoneText and GetZoneText()))
+  local here = ns.SelectedZone()
   local targets = db.targets or {}
   for _, m in ipairs(all) do
     ns.byId[m.id] = m
@@ -280,8 +309,10 @@ function ns.Rank(level)
     local okRank = (m.rank == 0) or ((m.rank == 1 or m.rank == 2) and db.elites) or (m.rank == 4 and db.rares)
     local okMap = (m.map <= 1) or (db.dungeons and ns.INSTANCES[m.map] ~= nil)
     local okZone = not here or (ns.ZoneName(m)) == here
+    -- a zone picked in the dropdown: every mob in that zone, whatever its level
+    local okLevel = here or (mid >= lo and mid <= hi)
     local isTarget = targets[m.id]
-    if isTarget or (mid >= lo and mid <= hi and okRank and okMap and okZone and not friendly(m)) then
+    if isTarget or (okLevel and okRank and okMap and okZone and not friendly(m)) then
       local v = ns.ValuePerKill(m)
       local kph = ns.KillsPerHour(m)
       out[#out+1] = { mob = m, perKill = v, kph = kph, perHour = v * kph, target = isTarget }
@@ -326,6 +357,28 @@ local function clearWaypoint()
   activeWP = nil
 end
 function ns.HasWaypoint(id) return activeWP and activeWP.id == id end
+
+-- One click does everything: a mob becomes a farm target (highlighted, spawn dots,
+-- combined gold/hr) and gets the single TomTom arrow. Clicking it again removes it,
+-- and the arrow moves to another target if there is one.
+function ns.ClickMob(m)
+  local db = VendorFarmDB
+  db.targets = db.targets or {}
+  if db.targets[m.id] then
+    local hadArrow = ns.HasWaypoint(m.id)
+    ns.ToggleTarget(m.id)
+    if hadArrow then
+      ns.Waypoint(m)   -- second call on the same mob removes the arrow
+      local idx = ns.IndexMobs()
+      for id in pairs(db.targets) do
+        if idx[id] then ns.Waypoint(idx[id]); break end
+      end
+    end
+  else
+    ns.ToggleTarget(m.id)
+    if not ns.HasWaypoint(m.id) then ns.Waypoint(m) end
+  end
+end
 function ns.WaypointMob() return activeWP and activeWP.id end
 
 function ns.Waypoint(m)
@@ -385,11 +438,16 @@ ev:SetScript("OnEvent", function(_, event, arg1)
       if VendorFarmDB.learnFull == 30 then VendorFarmDB.learnFull = 100 end
       VendorFarmDB.migr140 = true
     end
+    -- 2.5.0: the Zone checkbox became a dropdown
+    if VendorFarmDB.zoneOnly ~= nil then
+      if VendorFarmDB.zoneOnly then VendorFarmDB.zone = "@here" end
+      VendorFarmDB.zoneOnly = nil
+    end
     VendorFarmDB.version = ns.VERSION
     if ns.InitOptions then ns.InitOptions() end
     if ns.InitTracker then ns.InitTracker() end
   elseif event == "ZONE_CHANGED_NEW_AREA" then
-    if VendorFarmDB and VendorFarmDB.zoneOnly and ns.Refresh then ns.Refresh() end
+    if VendorFarmDB and VendorFarmDB.zone == "@here" and ns.Refresh then ns.Refresh() end
   elseif event == "PLAYER_LEVEL_UP" then
     if ns.Refresh then C_Timer.After(0.5, function() ns.Refresh(arg1) end) end
   elseif event == "GET_ITEM_INFO_RECEIVED" then

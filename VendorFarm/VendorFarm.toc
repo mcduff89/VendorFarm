@@ -2,7 +2,7 @@
 ## Title: VendorFarm
 ## Notes: Ranks mobs near your level by expected vendor gold per hour, from database drop rates and live sell prices.
 ## Author: mcduff89
-## Version: 2.1.0
+## Version: 2.5.0
 ## SavedVariables: VendorFarmDB
 ## OptionalDeps: QuestieDB, Auctionator, TomTom, LibDataBroker-1.1
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
